@@ -6,7 +6,7 @@ FROM alpine:latest AS fetcher
 #   podman build --build-arg LAUNCHER_VERSION=v1.2.0 .
 ARG LAUNCHER_VERSION=latest
 
-RUN apk add --no-cache curl jq unzip file
+RUN apk add --no-cache curl jq unzip file tar gzip
 
 WORKDIR /tmp
 
@@ -32,27 +32,50 @@ RUN set -euo pipefail; \
 # after productName, e.g. "arqa-launcher-linux-x64/arqa-launcher". We don't
 # want that path to leak into the Containerfile, so flatten it here: find
 # the single top-level directory (if any) and promote its contents up.
-RUN set -euo pipefail; \
+RUN set -euxo pipefail; \
     mkdir -p /app/_extract; \
     cd /app/_extract; \
+    echo "=== Checking launcher package ==="; \
+    file /tmp/launcher-package; \
+    ls -lh /tmp/launcher-package; \
+    echo "=== Extracting ==="; \
     if file /tmp/launcher-package | grep -qi zip; then \
+        echo "Detected ZIP format"; \
+        unzip -l /tmp/launcher-package | head -20; \
         unzip -q /tmp/launcher-package; \
     else \
+        echo "Detected TAR format"; \
+        tar -tzf /tmp/launcher-package | head -20; \
         tar -xf /tmp/launcher-package; \
     fi; \
-    ENTRIES=$(ls -A); \
-    COUNT=$(echo "$ENTRIES" | wc -l); \
-    if [ "$COUNT" -eq 1 ] && [ -d "$ENTRIES" ]; then \
-        mv "$ENTRIES"/* /app/ 2>/dev/null || true; \
-        mv "$ENTRIES"/.[!.]* /app/ 2>/dev/null || true; \
+    echo "=== Extraction complete, listing contents ==="; \
+    ls -laR /app/_extract; \
+    echo "=== Flattening structure ==="; \
+    ENTRIES=$(ls -A /app/_extract | head -1); \
+    if [ -n "$ENTRIES" ] && [ -d "/app/_extract/$ENTRIES" ] && [ "$(ls -A /app/_extract | wc -l)" -eq 1 ]; then \
+        echo "Found single top-level directory: $ENTRIES, promoting contents"; \
+        mv /app/_extract/"$ENTRIES"/* /app/ 2>/dev/null || true; \
+        mv /app/_extract/"$ENTRIES"/.[!.]* /app/ 2>/dev/null || true; \
     else \
-        mv /app/_extract/* /app/; \
+        echo "Multiple entries or not a directory, moving all contents"; \
+        mv /app/_extract/* /app/ 2>/dev/null || true; \
     fi; \
     rm -rf /app/_extract; \
-    BIN=$(find /app -maxdepth 1 -type f -executable | head -n1); \
-    if [ -z "$BIN" ]; then echo "ERROR: no executable found in extracted package" >&2; ls -laR /app >&2; exit 1; fi; \
+    echo "=== Final app directory ==="; \
+    ls -laR /app; \
+    BIN=$(find /app -maxdepth 1 -type f -executable 2>/dev/null | head -n1); \
+    if [ -z "$BIN" ]; then \
+        echo "ERROR: no executable found in extracted package" >&2; \
+        find /app -type f -ls | head -20 >&2; \
+        exit 1; \
+    fi; \
+    echo "Found binary: $BIN"; \
     chmod +x "$BIN"; \
-    if [ "$(basename "$BIN")" != "arqa-launcher" ]; then ln -sf "$(basename "$BIN")" /app/arqa-launcher; fi
+    if [ "$(basename "$BIN")" != "arqa-launcher" ]; then \
+        ln -sf "$(basename "$BIN")" /app/arqa-launcher; \
+    fi; \
+    echo "=== Setup complete ==="; \
+    ls -lh /app/arqa-launcher
 
 # --- Stage 2: Build the ArqaOS image ----------------------------------------
 FROM ghcr.io/ublue-os/bazzite-deck:stable
