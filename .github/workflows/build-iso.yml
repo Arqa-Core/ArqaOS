@@ -40,7 +40,7 @@ jobs:
           echo "Using SOURCE_IMAGE=${SOURCE_IMAGE}"
           echo "Using IMAGE_REGISTRY=${IMAGE_REGISTRY}"
           echo "Using IMAGE_NAME=${IMAGE_NAME}"
-          just build-iso
+          just build-iso ghcr.io/arqa-core/arqaos latest
 
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
