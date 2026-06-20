@@ -1,15 +1,17 @@
 name: Build ISO
 
 on:
+  workflow_run:
+    workflows: ["Build container image"]
+    types:
+      - completed
+    branches: [ "main" ]
   workflow_dispatch:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
 
 jobs:
   build-iso:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: read
       packages: read
