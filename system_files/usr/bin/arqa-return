@@ -1,0 +1,41 @@
+#!/bin/bash
+# arqa-return — return to the Arqa kiosk frontend.
+#
+# Called from the "Return to Frontend" desktop shortcut.
+# Works from both Desktop Mode and as a standalone command.
+#
+# Strategy:
+#   1. Kill any running emulator child managed by arqa-session-start.
+#   2. If steamos-session-select is available (Bazzite-deck), use it to
+#      switch the SDDM session back to arqa.desktop and trigger a re-login.
+#   3. Otherwise, write the SDDM autologin conf directly and restart SDDM.
+
+set -euo pipefail
+
+# --- 1. Kill any running game process ----------------------------------
+# arqa-session-start inherits the session, so kill descendants of cage.
+pkill -SIGTERM -f "arqa-launcher" 2>/dev/null || true
+pkill -SIGTERM -f "cage" 2>/dev/null || true
+
+# Give processes a moment to exit cleanly before falling through.
+sleep 1
+
+# --- 2. Switch session via steamos-session-select (preferred) ----------
+if command -v steamos-session-select &>/dev/null; then
+    exec steamos-session-select arqa
+fi
+
+# --- 3. Fallback: write SDDM session override + restart SDDM -----------
+mkdir -p /etc/sddm.conf.d
+
+cat > /etc/sddm.conf.d/21-session-override.conf <<EOF
+[General]
+DefaultSession=arqa.desktop
+EOF
+
+# Restart SDDM so the new session takes effect.
+if command -v systemctl &>/dev/null; then
+    systemctl restart sddm.service
+else
+    echo "Could not restart SDDM — reboot to apply session change." >&2
+fi

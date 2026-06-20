@@ -11,6 +11,7 @@ on:
       - main
     paths-ignore:
       - '**/README.md'
+      - '.github/agents/**'
   workflow_dispatch:
 
 env:

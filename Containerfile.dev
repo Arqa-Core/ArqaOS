@@ -1,0 +1,22 @@
+# --- Dev build: uses a locally-packaged ArqaLauncher instead of fetching
+# from GitHub releases. Run via:
+#
+#   just build-dev
+#
+# which builds the launcher in ../ArqaLauncher, copies the result into
+# .dev-launcher/, then builds this Containerfile with that as context.
+#
+# The directory .dev-launcher/ is in .gitignore and is only created at
+# build time by the Justfile recipe.
+
+FROM ghcr.io/ublue-os/bazzite-deck:stable
+
+COPY build_files /ctx/build_files
+COPY system_files /ctx/system_files
+COPY .dev-launcher /opt/ArqaLauncher
+
+RUN chmod +x /ctx/build_files/build.sh && /ctx/build_files/build.sh
+
+RUN rm -rf /ctx
+
+RUN bootc container lint

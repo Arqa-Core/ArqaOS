@@ -1,6 +1,11 @@
 # --- Stage 1: Fetch the latest ArqaLauncher release asset -------------------
 FROM alpine:latest AS fetcher
 
+# Pin to a specific release tag (e.g. "v1.2.0") or keep "latest" to always
+# track the newest release. Override at build time with:
+#   podman build --build-arg LAUNCHER_VERSION=v1.2.0 .
+ARG LAUNCHER_VERSION=latest
+
 RUN apk add --no-cache curl jq unzip file
 
 WORKDIR /tmp
@@ -8,10 +13,15 @@ WORKDIR /tmp
 # Pull the release metadata once, fail loudly if it's empty (rate-limited /
 # no releases yet / repo renamed) instead of silently producing an empty zip.
 RUN set -euo pipefail; \
-    curl -fsSL https://api.github.com/repos/Arqa-Core/ArqaLauncher/releases/latest -o release.json; \
+    if [ "${LAUNCHER_VERSION}" = "latest" ]; then \
+        RELEASE_URL="https://api.github.com/repos/Arqa-Core/ArqaLauncher/releases/latest"; \
+    else \
+        RELEASE_URL="https://api.github.com/repos/Arqa-Core/ArqaLauncher/releases/tags/${LAUNCHER_VERSION}"; \
+    fi; \
+    curl -fsSL "${RELEASE_URL}" -o release.json; \
     URL=$(jq -r '.assets[] | select(.name | test("linux.*\\.(zip|tar\\.gz)$")) | .browser_download_url' release.json | head -n1); \
     if [ -z "$URL" ] || [ "$URL" = "null" ]; then \
-        echo "ERROR: no linux release asset found on ArqaLauncher latest release" >&2; \
+        echo "ERROR: no linux release asset found on ArqaLauncher release '${LAUNCHER_VERSION}'" >&2; \
         cat release.json >&2; \
         exit 1; \
     fi; \

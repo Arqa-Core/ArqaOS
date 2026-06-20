@@ -380,6 +380,80 @@ _run-vm $target_image $tag $type $config:
     run_args=()
     run_args+=(--rm --privileged)
     run_args+=(--pull=newer)
+
+# -----------------------------------------------------------------------
+# Dev build: build ArqaLauncher locally and inject it into the image
+# without going through a GitHub release. Requires npm in PATH and the
+# ArqaLauncher repo checked out as a sibling directory (../ArqaLauncher).
+#
+# Usage:
+#   just build-dev                   # uses image name from image-template.env
+#   just build-dev myimage mydev     # custom name + tag
+# -----------------------------------------------------------------------
+[group('Utility')]
+build-dev $target_image=image_name $tag="dev":
+    #!/usr/bin/env bash
+    set -euox pipefail
+
+    LAUNCHER_SRC="$(realpath ../ArqaLauncher)"
+    if [[ ! -d "${LAUNCHER_SRC}" ]]; then
+        echo "ERROR: ArqaLauncher repo not found at ${LAUNCHER_SRC}" >&2
+        echo "       Clone it as a sibling of this repo: git clone <url> ../ArqaLauncher" >&2
+        exit 1
+    fi
+
+    # Build the Electron app with Electron Forge (produces a zip/tar in out/make/)
+    echo "==> Building ArqaLauncher in ${LAUNCHER_SRC} ..."
+    pushd "${LAUNCHER_SRC}"
+    npm install --prefer-offline
+    npm run make -- --platform linux
+    popd
+
+    # Locate the produced archive (zip preferred, fall back to tar.gz)
+    ARCHIVE=$(find "${LAUNCHER_SRC}/out/make" \
+        \( -name "*linux*.zip" -o -name "*linux*.tar.gz" \) \
+        -type f | head -n1)
+    if [[ -z "${ARCHIVE}" ]]; then
+        echo "ERROR: no linux archive found under ${LAUNCHER_SRC}/out/make/" >&2
+        ls -lR "${LAUNCHER_SRC}/out/make/" >&2
+        exit 1
+    fi
+
+    # Flatten into .dev-launcher/ (same logic as the Containerfile fetcher stage)
+    rm -rf .dev-launcher _dev_extract
+    mkdir -p _dev_extract
+    if [[ "${ARCHIVE}" == *.zip ]]; then
+        unzip -q "${ARCHIVE}" -d _dev_extract
+    else
+        tar -xf "${ARCHIVE}" -C _dev_extract
+    fi
+    # Promote single nested dir if present
+    ENTRIES=$(ls -A _dev_extract)
+    COUNT=$(echo "${ENTRIES}" | wc -l)
+    if [[ "${COUNT}" -eq 1 ]] && [[ -d "_dev_extract/${ENTRIES}" ]]; then
+        mv "_dev_extract/${ENTRIES}" .dev-launcher
+    else
+        mv _dev_extract .dev-launcher
+    fi
+    rm -rf _dev_extract
+
+    BIN=$(find .dev-launcher -maxdepth 1 -type f -executable | head -n1)
+    if [[ -z "${BIN}" ]]; then
+        echo "ERROR: no executable found in .dev-launcher/" >&2; ls -laR .dev-launcher/ >&2; exit 1
+    fi
+    chmod +x "${BIN}"
+    [[ "$(basename "${BIN}")" != "arqa-launcher" ]] && \
+        ln -sf "$(basename "${BIN}")" .dev-launcher/arqa-launcher
+
+    echo "==> Building ArqaOS image with local launcher ..."
+    podman build \
+        --tag "${target_image}:${tag}" \
+        --file Containerfile.dev \
+        .
+
+    echo ""
+    echo "Dev image built: ${target_image}:${tag}"
+    echo "Run with: podman run --rm -it ${target_image}:${tag}"
     run_args+=(--publish "127.0.0.1:${port}:8006")
     run_args+=(--env "CPU_CORES=4")
     run_args+=(--env "RAM_SIZE=8G")
