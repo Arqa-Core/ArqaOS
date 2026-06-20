@@ -1,3 +1,4 @@
+---
 name: Build ISO
 
 on:
@@ -5,48 +6,137 @@ on:
     workflows: ["Build container image"]
     types:
       - completed
-    branches: [ "main" ]
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to build ISO from (default: latest)'
+        required: false
+        type: string
+
+env:
+  IMAGE_REGISTRY: "ghcr.io"
+  BIB_IMAGE: "quay.io/centos-bootc/bootc-image-builder:latest"
 
 jobs:
   build-iso:
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    name: Build ArqaOS ISO
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
 
-    env:
-      IMAGE_REGISTRY: ghcr.io
-      IMAGE_NAME: arqa-core/arqaos
-      DEFAULT_TAG: latest
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-      - name: Install Just
-        uses: extractions/setup-just@v2
+      - name: Install just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+
+      - name: Get image metadata
+        id: metadata
+        run: |
+          # Load from image-template.env
+          set -a
+          source image-template.env
+          set +a
+          
+          IMAGE_NAME="${IMAGE_NAME,,}"
+          REPO_ORG="${REPO_ORGANIZATION,,}"
+          
+          # Determine tag
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            TAG="${{ inputs.image_tag }}"
+          else
+            TAG=$(just generate-default-tag)
+          fi
+          
+          IMAGE_URI="${IMAGE_REGISTRY}/${REPO_ORG}/${IMAGE_NAME}:${TAG}"
+          
+          echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_OUTPUT
+          echo "TAG=${TAG}" >> $GITHUB_OUTPUT
+          echo "Building ISO for: ${IMAGE_URI}"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Podman
+        run: |
+          podman --version
+          podman info
 
       - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-      - name: Build ISO
-        env:
-          # Force non-local image source for CI
-          SOURCE_IMAGE: ghcr.io/arqa-core/arqaos:latest
-          IMAGE_REGISTRY: ghcr.io
-          IMAGE_NAME: arqa-core/arqaos
-          DEFAULT_TAG: latest
+        if: github.event_name != 'pull_request'
         run: |
-          echo "Using SOURCE_IMAGE=${SOURCE_IMAGE}"
-          echo "Using IMAGE_REGISTRY=${IMAGE_REGISTRY}"
-          echo "Using IMAGE_NAME=${IMAGE_NAME}"
-          just build-iso ghcr.io/arqa-core/arqaos latest
+          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ${{ env.IMAGE_REGISTRY }} \
+            -u ${{ github.actor }} --password-stdin
 
-      - name: Upload ISO artifact
+      - name: Create build directories
+        run: |
+          mkdir -p build_output/iso
+          mkdir -p build_output/logs
+
+      - name: Build ISO with bootc-image-builder
+        run: |
+          set -eux
+          
+          # Pull the OCI image from GHCR
+          echo "Pulling image: ${{ steps.metadata.outputs.IMAGE_URI }}"
+          if ! podman pull "${{ steps.metadata.outputs.IMAGE_URI }}"; then
+            echo "Failed to pull image, checking available tags..."
+            podman images
+            exit 1
+          fi
+          
+          # Verify the image exists locally
+          podman images | grep -E "${{ steps.metadata.outputs.IMAGE_NAME }}"
+          
+          # Run bootc-image-builder for ISO
+          podman run --rm \
+            --privileged \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            -v "$(pwd)/disk_config:/config:ro" \
+            -v "$(pwd)/build_output/iso:/output" \
+            --security-opt label=type:unconfined_t \
+            "${{ env.BIB_IMAGE }}" \
+            --type iso \
+            --config /config/iso.toml \
+            "${{ steps.metadata.outputs.IMAGE_URI }}" 2>&1 | tee build_output/logs/bib-build.log
+
+      - name: List generated artifacts
+        if: always()
+        run: |
+          echo "=== Build Output Contents ==="
+          find build_output -type f -exec ls -lh {} \;
+          echo "=== Looking for ISO files ==="
+          find build_output -name "*.iso" -o -name "*.qcow2"
+
+      - name: Upload ISO as artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: arqaos-iso
-          path: output/bootiso/*.iso
-          if-no-files-found: error
+          name: arqaos-iso-${{ steps.metadata.outputs.TAG }}
+          path: build_output/iso/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arqaos-iso-logs-${{ steps.metadata.outputs.TAG }}
+          path: build_output/logs/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Create GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v') && success()
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build_output/iso/**/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
