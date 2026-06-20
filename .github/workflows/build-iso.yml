@@ -1,0 +1,32 @@
+name: Build ISO
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Just
+        uses: extractions/setup-just@v2
+
+      - name: Build ISO
+        run: |
+          just build-iso
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: arqaos-iso
+          path: output/bootiso/*.iso
+          if-no-files-found: error
