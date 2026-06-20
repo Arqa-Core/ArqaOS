@@ -1,306 +1,303 @@
-# image-template
+# ArqaOS
 
-This repository is meant to be a template for building your own custom [bootc](https://github.com/bootc-dev/bootc) image. This template is the recommended way to make customizations to any image published by the Universal Blue Project.
+A customized Fedora Atomic (bootc) distribution with an integrated PS3 XMB-inspired emulation kiosk frontend.
 
-# Community
+> **Status**: Active development | Builds available at [ghcr.io/Arqa-Core/arqaos](https://ghcr.io/Arqa-Core/arqaos)
 
-If you have questions about this template after following the instructions, try the following spaces:
-- [Universal Blue Forums](https://universal-blue.discourse.group/)
-- [Universal Blue Discord](https://discord.gg/WEu6BdFEtp)
-- [bootc discussion forums](https://github.com/bootc-dev/bootc/discussions) - This is not an Universal Blue managed space, but is an excellent resource if you run into issues with building bootc images.
+## Overview
 
-# How to Use
+ArqaOS is a purpose-built Linux operating system designed for retro gaming and emulation. It combines:
 
-To get started on your first bootc image, simply read and follow the steps in the next few headings.
-If you prefer instructions in video form, TesterTech created an excellent tutorial, embedded below.
+- **Base OS**: Fedora Atomic (bootc) leveraging [ublue-os/bazzite-deck](https://github.com/ublue-os/bazzite-deck) as the foundation
+- **Launcher**: ArqaLauncher, an Electron-based full-screen kiosk UI inspired by the PlayStation 3 XMB interface
+- **Session Management**: Wayland compositor (`cage`), SDDM display manager, and auto-login session orchestration
+- **Boot Experience**: Custom Plymouth theme with animated splash screen
 
-[![Video Tutorial](https://img.youtube.com/vi/IxBl11Zmq5w/0.jpg)](https://www.youtube.com/watch?v=IxBl11Zmq5wE)
+The result is a seamless, immersive kiosk experience where users boot directly into a game launcher without seeing traditional desktop elements.
 
-## Step 0: Prerequisites
+## Architecture
 
-These steps assume you have the following:
-- A Github Account
-- A machine running a bootc image (e.g. Bazzite, Bluefin, Aurora, or Fedora Atomic)
-- Experience installing and using CLI programs
+```
+ArqaOS (this repository)
+├── Containerfile          → Two-stage build: fetch ArqaLauncher, assemble image
+├── Containerfile.dev      → Development build using local ArqaLauncher
+├── build_files/           → Installation and configuration scripts
+│   └── build.sh           → Main provisioning script
+├── system_files/          → System files injected into image
+│   ├── etc/               → Configuration files (SDDM, session)
+│   ├── usr/bin/           → Executable scripts (arqa-session-start, arqa-return)
+│   ├── usr/libexec/       → Service helpers
+│   └── usr/share/         → Assets (backgrounds, Plymouth theme, SDDM config)
+├── disk_config/           → bootc-image-builder configurations for ISO/QCOW2
+│   ├── iso.toml           → ISO build configuration
+│   ├── iso-gnome.toml     → ISO with GNOME (variant)
+│   └── iso-kde.toml       → ISO with KDE (variant)
+├── Justfile               → Build automation (podman, ISO, VM)
+└── .github/workflows/     → GitHub Actions CI/CD
+    ├── build.yml          → Container image build and push
+    └── build-iso.yml      → ISO artifact generation
 
-## Step 1: Preparing the Template
+ArqaLauncher (separate repository)
+├── main.js                → Electron main process, IPC, emulator management
+├── preload.js             → IPC bridge
+├── renderer/
+│   ├── renderer.js        → React UI (XMB menu, library, settings)
+│   ├── style.css          → Styling and animations
+│   ├── index.html         → Electron shell
+│   └── assets/            → React UMD bundles, sounds, images
+└── package.json           → Dependencies and metadata
+```
 
-### Step 1a: Copying the Template
+### Build Flow
 
-Select `Use this Template` on this page. You can set the name and description of your repository to whatever you would like, but all other settings should be left untouched.
+1. **Local Development**
+   ```bash
+   just build-dev              # Build with local ArqaLauncher (requires npm install in launcher repo)
+   just build                  # Build with latest release from GitHub
+   ```
 
-Once you have finished copying the template, you need to enable the Github Actions workflows for your new repository.
-To enable the workflows, go to the `Actions` tab of the new repository and click the button to enable workflows.
+2. **CI/CD (GitHub Actions)**
+   - **build.yml**: Triggers on push to `main`, builds container image, signs with cosign, pushes to GHCR
+   - **build-iso.yml**: Triggered by build.yml completion, downloads image, generates ISO using bootc-image-builder
 
-### Step 1b: Cloning the New Repository
+3. **Distribution**
+   - Container image: `ghcr.io/Arqa-Core/arqaos:latest`
+   - ISO artifact: Available in GitHub release for tagged commits
+   - qcow2 image: Generated for VM testing
 
-Here I will defer to the much superior GitHub documentation on the matter. You can use whichever method is easiest.
-[GitHub Documentation](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository)
+## Design Aesthetic
 
-Once you have the repository on your local drive, proceed to the next step.
+ArqaOS follows a cohesive visual language inspired by the PlayStation 3 XMB:
 
-## Step 2: Initial Setup
+| Element | Color | Usage |
+|---------|-------|-------|
+| **Background** | `#05030c` → `#050310` → `#0a0420` → `#100633` (gradient) | Deep space atmosphere |
+| **Accent** | `rgba(138, 84, 255, 0.8)` (`#8a54ff`) | Glow, highlights, focus states |
+| **Text** | `#eef0ff` | Labels, menu items |
+| **Tertiary** | `#1a1a3e` | Secondary elements |
 
-### Step 2a: Creating a Cosign Key
+This palette is maintained across:
+- Plymouth boot animation
+- SDDM login screen
+- ArqaLauncher UI (XMB menu, backgrounds, icons)
+- System backgrounds
 
-Container signing is important for end-user security and is enabled on all Universal Blue images. By default the image builds *will fail* if you don't.
+## Features
 
-First, install the [cosign CLI tool](https://edu.chainguard.dev/open-source/sigstore/cosign/how-to-install-cosign/#installing-cosign-with-the-cosign-binary)
-With the cosign tool installed, run inside your repo folder:
+### ✅ Current Capabilities
+
+- **XMB-Style Navigation**: Horizontal categories with flowing wave animations
+- **ROM Scanning**: Automatic detection of game files from configured ROM directories
+- **Emulator Integration**: Launch games through detected emulators (RetroArch, Dolphin, etc.)
+- **Gamepad Support**: Full gamepad input mapping for XMB navigation and emulator control
+- **Wayland Session**: Modern Wayland compositor (cage) for reliable fullscreen kiosk operation
+- **Auto-Login**: Seamless boot-to-kiosk experience with SDDM auto-login
+- **Return Mechanism**: Desktop shortcut to cleanly exit games and return to launcher
+- **Settings Persistence**: User preferences saved to `arqa-settings.json`
+- **Offline Operation**: Bundled React libraries, no internet dependency required
+
+### 🔮 Planned Features
+
+- Multi-user profiles with save state management
+- Cloud sync for game saves (optional)
+- Shader presets and per-game configurations
+- Voice control integration
+- Custom theme editor
+
+## Getting Started
+
+### Prerequisites
+
+- **For Building Locally**:
+  - Linux system with `podman` or Docker
+  - `just` task runner
+  - `npm` (for `just build-dev` with local ArqaLauncher)
+  - 50+ GB free disk space for image builds
+
+- **For Using ISO**:
+  - USB drive (8GB+) for bootable ISO
+  - UEFI-capable system
+  - 20+ GB disk space for installation
+
+### Quick Build
 
 ```bash
-COSIGN_PASSWORD="" cosign generate-key-pair
+# Clone the repository
+git clone https://github.com/Arqa-Core/ArqaOS.git
+cd ArqaOS
+
+# Build the container image
+just build
+
+# Generate ISO from built image
+just build-iso
+
+# Or build and test in a VM
+just build-qcow2
+just _run-vm
 ```
 
-The signing key will be used in GitHub Actions and will not work if it is password protected.
+### Configuration
 
-> [!WARNING]
-> Be careful to *never* accidentally commit `cosign.key` into your git repo. If this key goes out to the public, the security of your repository is compromised.
+**System Files** (`system_files/`):
+- Edit SDDM theme in `usr/share/sddm/themes/breeze/theme.conf.user`
+- Modify Plymouth animation in `usr/share/plymouth/themes/arqa/arqa.script`
+- Customize session start in `etc/arqa/session-start.sh`
 
-Next, you need to add the key to GitHub. This makes use of GitHub's secret signing system.
+**Build Arguments**:
+```bash
+# Pin a specific ArqaLauncher version
+just build LAUNCHER_VERSION=v1.2.0
 
-<details>
-    <summary>Using the Github Web Interface (preferred)</summary>
+# Use development launcher
+just build-dev
+```
 
-Go to your repository settings, under `Secrets and Variables` -> `Actions`
-![image](https://user-images.githubusercontent.com/1264109/216735595-0ecf1b66-b9ee-439e-87d7-c8cc43c2110a.png)
-Add a new secret and name it `SIGNING_SECRET`, then paste the contents of `cosign.key` into the secret and save it. Make sure it's the .key file and not the .pub file. Once done, it should look like this:
-![image](https://user-images.githubusercontent.com/1264109/216735690-2d19271f-cee2-45ac-a039-23e6a4c16b34.png)
-</details>
-<details>
-<summary>Using the Github CLI</summary>
+**ISO Configuration** (`disk_config/`):
+- `iso.toml`: Standard GNOME ISO
+- `iso-kde.toml`: KDE Plasma variant
+- `iso-gnome.toml`: Explicit GNOME variant
 
-If you have the `github-cli` installed, run:
+## Development
+
+### Project Structure
+
+- **Containerfile**: Main production build
+- **Containerfile.dev**: Development build with local launcher injection
+- **build.sh**: Runs inside container, installs packages, configures services
+- **arqa-autologin-setup.sh**: systemd service that sets up auto-login on first boot
+- **arqa-session-start.sh**: Wayland session entry point (sets up cage, SDDM)
+- **arqa-return**: Script to cleanly exit emulator and return to launcher
+
+### Common Tasks
 
 ```bash
-gh secret set SIGNING_SECRET < cosign.key
+# Check build for syntax errors
+just check
+
+# Build image locally (production build with latest launcher release)
+just build
+
+# Build image with local ArqaLauncher for testing
+just build-dev
+
+# Rebuild specific components
+just ostree-rechunk      # Split image layers
+just _rootful_load_image # Load image into podman
+
+# Create bootable ISO
+just build-iso
+
+# Create QCOW2 disk image for VMs
+just build-qcow2
+
+# Run VM with QEMU
+just _run-vm
 ```
-</details>
 
-### Step 2b: Choosing Your Base Image
+### Customization
 
-To choose a base image, simply modify the line in the container file starting with `FROM`. This will be the image your image derives from, and is your starting point for modifications.
-For a base image, you can choose any of the Universal Blue images or start from a Fedora Atomic system. Below this paragraph is a dropdown with a non-exhaustive list of potential base images.
+1. **Launcher UI**: Edit ArqaLauncher repository (separate repo)
+   - Modify `renderer/renderer.js` for XMB logic
+   - Update `renderer/style.css` for styling
+   - Ensure aesthetic contract (#05030c, #8a54ff) is maintained
 
-<details>
-    <summary>Base Images</summary>
+2. **System Packages**: Edit `build.sh` in `RUN dnf5 install` section
 
-- Bazzite: `ghcr.io/ublue-os/bazzite:stable`
-- Aurora: `ghcr.io/ublue-os/aurora:stable`
-- Bluefin: `ghcr.io/ublue-os/bluefin:stable`
-- Universal Blue Base: `ghcr.io/ublue-os/base-main:latest`
-- Fedora: `quay.io/fedora/fedora-bootc:44`
+3. **Boot Experience**: Modify Plymouth theme in `system_files/usr/share/plymouth/themes/arqa/`
 
-You can find more Universal Blue images on the [packages page](https://github.com/orgs/ublue-os/packages).
-</details>
+4. **Session Management**: Edit `system_files/etc/arqa/session-start.sh`
 
-If you don't know which image to pick, choosing the one your system is currently on is the best bet for a smooth transition. To find out what image your system currently uses, run the following command:
+### Environment Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `LAUNCHER_VERSION` | ArqaLauncher release to fetch | `latest` |
+| `IMAGE_NAME` | Container image name | `arqaos` |
+| `REPO_ORGANIZATION` | GitHub organization | `Arqa-Core` |
+| `BIB_IMAGE` | bootc-image-builder image | `quay.io/centos-bootc/bootc-image-builder:latest` |
+
+## CI/CD Pipeline
+
+### GitHub Actions Workflows
+
+**build.yml** (Triggered on push to `main`)
+1. Run `just check` for syntax validation
+2. Run `just build` to build container image
+3. Run `just ostree-rechunk` to split layers
+4. Push to GHCR with labels and metadata
+5. Sign image with cosign
+
+**build-iso.yml** (Triggered after build.yml or manual dispatch)
+1. Download built container image from GHCR
+2. Run bootc-image-builder with `disk_config/iso.toml`
+3. Upload ISO as GitHub Actions artifact (30-day retention)
+4. Create GitHub release for tagged commits
+
+### Manual Dispatch
+
+Trigger workflows manually:
 ```bash
-sudo bootc status
-```
-This will show you all the info you need to know about your current image. The image you are currently on is displayed after `Booted image:`. Paste that information after the `FROM` statement in the Containerfile to set it as your base image.
-
-### Step 2c: Changing Names
-
-Change the `IMAGE_NAME` and `REPO_ORGANIZATION` variable inside the `image-template.env`
-
-To commit and push all the files changed and added in step 2 into your Github repository:
-```bash
-git add Containerfile image-template.env cosign.pub
-git commit -m "Initial Setup"
-git push
-```
-Once pushed, go look at the Actions tab on your Github repository's page.  The green checkmark should be showing on the top commit, which means your new image is ready!
-
-## Step 3: Switch to Your Image
-
-From your bootc system, run the following command substituting in your Github username and image name where noted.
-```bash
-sudo bootc switch ghcr.io/<username>/<image_name>
-```
-This should queue your image for the next reboot, which you can do immediately after the command finishes. You have officially set up your custom image! See the following section for an explanation of the important parts of the template for customization.
-
-# Repository Contents
-
-## Containerfile
-
-The [Containerfile](./Containerfile) defines the operations used to customize the selected image.This file is the entrypoint for your image build, and works exactly like a regular podman Containerfile. For reference, please see the [Podman Documentation](https://docs.podman.io/en/latest/Introduction.html).
-
-## build.sh
-
-The [build.sh](./build_files/build.sh) file is called from your Containerfile. It is the best place to install new packages or make any other customization to your system. There are customization examples contained within it for your perusal.
-
-## build.yml
-
-The [build.yml](./.github/workflows/build.yml) Github Actions workflow creates your custom OCI image and publishes it to the Github Container Registry (GHCR). By default, the image name will match the Github repository name.
-
-# Building Disk Images
-
-This template provides an out of the box workflow for creating disk images (ISO, qcow, raw) for your custom OCI image which can be used to directly install onto your machines.
-
-This template provides a way to upload the disk images that is generated from the workflow to a S3 bucket. The disk images will also be available as an artifact from the job, if you wish to use an alternate provider. To upload to S3 we use [rclone](https://rclone.org/) which is able to use [many S3 providers](https://rclone.org/s3/).
-
-## Setting Up ISO Builds
-
-The [build-disk.yml](./.github/workflows/build-disk.yml) Github Actions workflow creates a disk image from your OCI image by utilizing the [bootc-image-builder](https://osbuild.org/docs/bootc/). In order to use this workflow you must complete the following steps:
-
-1. Modify `disk_config/iso.toml` to point to your custom container image before generating an ISO image.
-2. If you changed your image name from the default in `build.yml` then in the `build-disk.yml` file edit the `IMAGE_REGISTRY`, `IMAGE_NAME` and `DEFAULT_TAG` environment variables with the correct values. If you did not make changes, skip this step.
-3. Finally, if you want to upload your disk images to S3 then you will need to add your S3 configuration to the repository's Action secrets. This can be found by going to your repository settings, under `Secrets and Variables` -> `Actions`. You will need to add the following
-  - `S3_PROVIDER` - Must match one of the values from the [supported list](https://rclone.org/s3/)
-  - `S3_BUCKET_NAME` - Your unique bucket name
-  - `S3_ACCESS_KEY_ID` - It is recommended that you make a separate key just for this workflow
-  - `S3_SECRET_ACCESS_KEY` - See above.
-  - `S3_REGION` - The region your bucket lives in. If you do not know then set this value to `auto`.
-  - `S3_ENDPOINT` - This value will be specific to the bucket as well.
-
-Once the workflow is done, you'll find the disk images either in your S3 bucket or as part of the summary under `Artifacts` after the workflow is completed.
-
-# Artifacthub
-
-This template comes with the necessary tooling to index your image on [artifacthub.io](https://artifacthub.io). Use the `artifacthub-repo.yml` file at the root to verify yourself as the publisher. This is important to you for a few reasons:
-
-- The value of artifacthub is it's one place for people to index their custom images, and since we depend on each other to learn, it helps grow the community. 
-- You get to see your pet project listed with the other cool projects in Cloud Native.
-- Since the site puts your README front and center, it's a good way to learn how to write a good README, learn some marketing, finding your audience, etc. 
-
-[Discussion Thread](https://universal-blue.discourse.group/t/listing-your-custom-image-on-artifacthub/6446)
-
-# Justfile Documentation
-
-The `Justfile` contains various commands and configurations for building and managing container images and virtual machine images using Podman and other utilities.
-To use it, you must have installed [just](https://just.systems/man/en/introduction.html) from your package manager or manually. It is available by default on all Universal Blue images.
-
-## Environment Variables
-
-These are all sourced from the `image-template.env` file.
-
-- `image_name`: The name of the image (default: "image-template").
-- `default_tag`: The default tag for the image (default: "latest").
-- `bib_image`: The Bootc Image Builder (BIB) image (default: "quay.io/centos-bootc/bootc-image-builder:latest").
-
-## Building The Image
-
-All these recipes will work (with default values) without supplying any arguments to them, e.g. `just build`
-
-### `just build`
-
-Builds a container image using Podman.
-
-```bash
-just build $target_image $tag
+# Via GitHub CLI
+gh workflow run build.yml
+gh workflow run build-iso.yml --ref main
 ```
 
-Arguments:
-- `$target_image`: The tag you want to apply to the image (default: `$image_name`).
-- `$tag`: The tag for the image (default: `$default_tag`).
+## Troubleshooting
 
-### Rechunking
-We can flatten the layers of container images to make sure there isn't a single huge layer when your image gets published.
-This does not make your image faster to download, just provides better resumability.
+### Build Fails with Exit Code 141
 
-#### `just ostree-rechunk`
-Rechunks the existing Image with [rpm-ostree](https://coreos.github.io/rpm-ostree/build-chunked-oci/)
+**Cause**: SIGPIPE during large file extraction (ArqaLauncher is 99MB+)
 
-```bash
-just ostree-rechunk $target_image $tag
-```
+**Solution**: Simplified extraction logic in Containerfile handles this automatically. If it persists:
+1. Check ArqaLauncher release has linux asset
+2. Try pinning a specific version: `just build LAUNCHER_VERSION=v1.0.0`
+3. Increase container memory: `podman build --memory 4g`
 
-#### `just rechunk`
-Rechunks the existing Image with [chunkah](https://github.com/coreos/chunkah), this is probably gonna be the default here at some point, try it out, it's cool.
+### ISO Fails to Boot
 
-```bash
-just rechunk $target_image $tag
-```
+**Cause**: EFI/UEFI compatibility or partition issues
 
-### Switching to the locally built image for testing
+**Solution**:
+1. Verify ISO is written correctly: `sha256sum` check against artifact
+2. Ensure UEFI is enabled in BIOS
+3. Try writing ISO with `dd` if USB tool fails: `dd if=arqaos-*.iso of=/dev/sdX bs=4M status=progress`
 
-The image has to be in the containers-storage owned by root, to be able to rebase to it, see the `_rootful_load_image` recipe.
+### Launcher Not Starting
 
-`sudo just build` and `sudo just ostree-rechunk` builds directly as root and allows you to skip the transfer to the root containers-storage.
+**Cause**: Missing dependencies or incorrect file permissions
 
-You can rebase to all the images that are in your containers-storage:
+**Solution**:
+1. Check arqa-launcher binary exists: `podman run --rm ghcr.io/Arqa-Core/arqaos:latest ls -lh /app/arqa-launcher`
+2. Verify session starts: Check `/var/log/arqa-session.log` (if logging enabled)
+3. Test launcher locally: `just build-dev && podman run --rm -it <image> /app/arqa-launcher`
 
-```
-sudo podman image list --filter=label=containers.bootc=1
-```
+## License
 
-See [man bootc switch](https://bootc.dev/bootc/man/bootc-switch.8.html) for more info.
+Apache License 2.0 – See [LICENSE](LICENSE) file
 
-```
-sudo bootc switch --transport containers-storage localhost/myimage:latest
-```
+## Contributing
 
-and reboot your system!
+Contributions welcome! Please:
 
-## Building and Running Virtual Machines and ISOs
+1. Fork the repository
+2. Create a feature branch
+3. Maintain aesthetic contract (#05030c, #8a54ff)
+4. Test locally with `just build-dev`
+5. Submit pull request with clear description
 
-The below commands all build QCOW2 images. To produce or use a different type of image, substitute in the command with that type in the place of `qcow2`. The available types are `qcow2`, `iso`, and `raw`.
+## Related Projects
 
-### `just build-qcow2`
+- **[ArqaLauncher](https://github.com/Arqa-Core/ArqaLauncher)**: The Electron-based XMB launcher (separate repo)
+- **[ublue-os/bazzite](https://github.com/ublue-os/bazzite)**: Base Fedora Atomic image
+- **[bootc](https://github.com/containers/bootc)**: OCI container to OS image tool
 
-Builds a QCOW2 virtual machine image.
+## Support
 
-```bash
-just build-qcow2 $target_image $tag
-```
+- **Issues**: Report bugs on [GitHub Issues](https://github.com/Arqa-Core/ArqaOS/issues)
+- **Discussions**: Join community discussion on [GitHub Discussions](https://github.com/Arqa-Core/ArqaOS/discussions)
+- **Releases**: Pre-built images available at [GHCR](https://ghcr.io/Arqa-Core/arqaos)
 
-### `just rebuild-qcow2`
+---
 
-Rebuilds a QCOW2 virtual machine image.
-
-```bash
-just rebuild-vm $target_image $tag
-```
-
-### `just run-vm-qcow2`
-
-Runs a virtual machine from a QCOW2 image.
-
-```bash
-just run-vm-qcow2 $target_image $tag
-```
-
-### `just spawn-vm`
-
-Runs a virtual machine using systemd-vmspawn.
-
-```bash
-just spawn-vm rebuild="0" type="qcow2" ram="6G"
-```
-
-## File Management
-
-### `just check`
-
-Checks the syntax of all `.just` files and the `Justfile`.
-
-### `just fix`
-
-Fixes the syntax of all `.just` files and the `Justfile`.
-
-### `just clean`
-
-Cleans the repository by removing build artifacts.
-
-### `just lint`
-
-Runs shell check on all Bash scripts.
-
-### `just format`
-
-Runs shfmt on all Bash scripts.
-
-## Additional resources
-
-For additional driver support, ublue maintains a set of scripts and container images available at [ublue-akmod](https://github.com/ublue-os/akmods). These images include the necessary scripts to install multiple kernel drivers within the container (Nvidia, OpenRazer, Framework...). The documentation provides guidance on how to properly integrate these drivers into your container image.
-
-## Community Examples
-
-These are images derived from this template (or similar enough to this template). Reference them when building your image!
-
-- [m2Giles' OS](https://github.com/m2giles/m2os)
-- [bOS](https://github.com/bsherman/bos)
-- [Homer](https://github.com/bketelsen/homer/)
-- [Amy OS](https://github.com/astrovm/amyos)
-- [VeneOS](https://github.com/Venefilyn/veneos)
+**Made with ♪ by the Arqa-Core team** | [GitHub Organization](https://github.com/Arqa-Core)

@@ -18,7 +18,6 @@ default:
     @just --list
 
 # Check Just Syntax
-[group('Just')]
 check:
     #!/usr/bin/bash
     find . -type f -name "*.just" | while read -r file; do
@@ -29,7 +28,6 @@ check:
     just --unstable --fmt --check -f Justfile
 
 # Fix Just Syntax
-[group('Just')]
 fix:
     #!/usr/bin/bash
     find . -type f -name "*.just" | while read -r file; do
@@ -40,7 +38,6 @@ fix:
     just --unstable --fmt -f Justfile || { exit 1; }
 
 # Clean Repo
-[group('Utility')]
 clean:
     #!/usr/bin/bash
     set -eoux pipefail
@@ -52,13 +49,11 @@ clean:
     rm -rf output/
 
 # Sudo Clean Repo
-[group('Utility')]
 [private]
 sudo-clean:
     just sudoif just clean
 
 # sudoif bash function
-[group('Utility')]
 [private]
 sudoif command *args:
     #!/usr/bin/bash
@@ -176,7 +171,6 @@ ostree-rechunk $target_image=image_name $tag=default_tag:
       --output containers-storage:"localhost/${target_image}:${tag}"
 
 # Generate Default Tag
-[group('Utility')]
 generate-default-tag $tag=default_tag:
     #!/usr/bin/env bash
     set -eoux pipefail
@@ -184,7 +178,6 @@ generate-default-tag $tag=default_tag:
     echo "${tag}"
 
 # Generate Tags
-[group('Utility')]
 generate-build-tags $target_image=image_name $tag=default_tag:
     #!/usr/bin/bash
     set -eoux pipefail
@@ -205,7 +198,6 @@ generate-build-tags $target_image=image_name $tag=default_tag:
     echo "${BUILD_TAGS[@]}"
 
 # Tag Images
-[group('Utility')]
 tag-images $target_image=image_name $tag=default_tag tags="":
     #!/usr/bin/env bash
     set -eoux pipefail
@@ -223,7 +215,6 @@ tag-images $target_image=image_name $tag=default_tag tags="":
     podman images
 
 # Image Name
-[group('Utility')]
 [private]
 image_name $target_image=image_name:
     #!/usr/bin/env bash
@@ -329,27 +320,21 @@ _build-bib $target_image $tag $type $config: (_rootful_load_image target_image t
 _rebuild-bib $target_image $tag $type $config: (build target_image tag) && (_build-bib target_image tag type config)
 
 # Build a QCOW2 virtual machine image
-[group('Build Virtal Machine Image')]
 build-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "qcow2" "disk_config/disk.toml")
 
 # Build a RAW virtual machine image
-[group('Build Virtal Machine Image')]
 build-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "raw" "disk_config/disk.toml")
 
 # Build an ISO virtual machine image
-[group('Build Virtal Machine Image')]
 build-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "iso" "disk_config/iso.toml")
 
 # Rebuild a QCOW2 virtual machine image
-[group('Build Virtal Machine Image')]
 rebuild-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "qcow2" "disk_config/disk.toml")
 
 # Rebuild a RAW virtual machine image
-[group('Build Virtal Machine Image')]
 rebuild-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "raw" "disk_config/disk.toml")
 
 # Rebuild an ISO virtual machine image
-[group('Build Virtal Machine Image')]
 rebuild-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "iso" "disk_config/iso.toml")
 
 # Run a virtual machine with the specified image type and configuration
@@ -405,7 +390,6 @@ _run-vm $target_image $tag $type $config:
 #   just build-dev                   # uses image name from image-template.env
 #   just build-dev myimage mydev     # custom name + tag
 # -----------------------------------------------------------------------
-[group('Utility')]
 build-dev $target_image=image_name $tag="dev":
     #!/usr/bin/env bash
     set -euox pipefail
@@ -471,19 +455,15 @@ build-dev $target_image=image_name $tag="dev":
     echo "Run with: podman run --rm -it ${target_image}:${tag}"
 
 # Run a virtual machine from a QCOW2 image
-[group('Run Virtal Machine')]
 run-vm-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_run-vm target_image tag "qcow2" "disk_config/disk.toml")
 
 # Run a virtual machine from a RAW image
-[group('Run Virtal Machine')]
 run-vm-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_run-vm target_image tag "raw" "disk_config/disk.toml")
 
 # Run a virtual machine from an ISO
-[group('Run Virtal Machine')]
 run-vm-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_run-vm target_image tag "iso" "disk_config/iso.toml")
 
 # Run a virtual machine using systemd-vmspawn
-[group('Run Virtal Machine')]
 spawn-vm rebuild="0" type="qcow2" ram="6G":
     #!/usr/bin/env bash
 
