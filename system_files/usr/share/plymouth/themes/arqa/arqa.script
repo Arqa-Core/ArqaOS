@@ -1,0 +1,66 @@
+// ArqaOS Plymouth boot splash
+// Full-bleed themed background + centered logo + animated loading dots.
+
+Window.SetBackgroundTopColor(0.02, 0.01, 0.06);
+Window.SetBackgroundBottomColor(0.02, 0.01, 0.06);
+
+background.image = Image("background.png");
+background.sprite = Sprite(background.image);
+background.sprite.SetZ(-100);
+
+fun refresh_background() {
+    sx = Window.GetWidth() / background.image.GetWidth();
+    sy = Window.GetHeight() / background.image.GetHeight();
+    background.sprite.SetX(0);
+    background.sprite.SetY(0);
+    background.sprite.SetScale(sx, sy);
+}
+refresh_background();
+
+logo.image = Image("logo.png");
+logo.sprite = Sprite(logo.image);
+logo.sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - logo.image.GetWidth() / 2);
+logo.sprite.SetY(Window.GetY() + Window.GetHeight() / 2 - logo.image.GetHeight() / 2);
+logo.sprite.SetZ(10);
+
+// three small pulsing dots beneath the logo to indicate progress
+dot_count = 3;
+dot_radius = 5;
+dot_gap = 22;
+for (i = 0; i < dot_count; i++) {
+    dots[i].image = Image.Text("\u25CF", 1, 1, 1, 1, "Sans 14");
+    dots[i].sprite = Sprite(dots[i].image);
+    dots[i].sprite.SetZ(10);
+}
+
+base_y = Window.GetY() + Window.GetHeight() / 2 + logo.image.GetHeight() / 2 + 50;
+base_x = Window.GetX() + Window.GetWidth() / 2 - dot_gap;
+
+fun refresh_dots(duration) {
+    for (i = 0; i < dot_count; i++) {
+        phase = duration * 2 - i * 0.6;
+        opacity = 0.35 + 0.65 * Math.Abs(Math.Sin(phase));
+        dots[i].sprite.SetOpacity(opacity);
+        dots[i].sprite.SetX(base_x + i * dot_gap);
+        dots[i].sprite.SetY(base_y);
+    }
+}
+
+fun refresh_callback() {
+    refresh_background();
+}
+
+Plymouth.SetRefreshFunction(refresh_callback);
+
+fun progress_callback(duration, progress) {
+    refresh_dots(duration);
+}
+
+Plymouth.SetBootProgressFunction(progress_callback);
+
+fun quit_callback() {
+    logo.sprite.SetOpacity(0);
+    background.sprite.SetOpacity(0);
+}
+
+Plymouth.SetQuitFunction(quit_callback);

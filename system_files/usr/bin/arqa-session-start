@@ -1,0 +1,24 @@
+#!/bin/bash
+# arqa-session-start
+#
+# Launched by SDDM as the "Arqa Frontend" wayland session. Cage is a
+# single-app kiosk compositor: whatever command we give it becomes the
+# only window, forced borderless and fullscreen, with nothing else running
+# alongside it.
+#
+# Electron does NOT use Wayland by default - without --ozone-platform=wayland
+# it falls back to an XWayland/X11 path that Cage does not provide, so the
+# app would fail to show anything. The flags below are required, not optional.
+
+set -euo pipefail
+
+export XDG_SESSION_TYPE=wayland
+export ELECTRON_OZONE_PLATFORM_HINT=wayland
+
+ARQA_BIN="/opt/ArqaLauncher/arqa-launcher"
+
+exec cage -- "$ARQA_BIN" \
+    --ozone-platform=wayland \
+    --enable-features=UseOzonePlatform,WaylandWindowDecorations \
+    --no-sandbox \
+    --start-fullscreen

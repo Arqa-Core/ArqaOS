@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Return to Frontend
+Comment=Switch back to the Arqa kiosk frontend
+Exec=steamos-session-select arqa
+Icon=/usr/share/backgrounds/arqa/arqa-logo.png
+Terminal=false
+Type=Application

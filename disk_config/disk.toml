@@ -1,3 +1,7 @@
 [[customizations.filesystem]]
 mountpoint = "/"
 minsize = "20 GiB"
+[[customizations.user]]
+name = "arqa"
+password = "$6$TQmiaKfEiTrQw.jM$E93WYZK5OO/4cByrFxq5nS0VPC8JJ9xPjn08FFCqmUYFaLSo1Hpdd3.q4b0uq6a4hRQcoqLzc0LqM2YQJXCoC0"
+groups = ["wheel"]

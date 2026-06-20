@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Arqa
+Description=ArqaOS boot splash
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/arqa
+ScriptFile=/usr/share/plymouth/themes/arqa/arqa.script

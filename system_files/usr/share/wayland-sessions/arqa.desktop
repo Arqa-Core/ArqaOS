@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Arqa Frontend
+Comment=Custom Fullscreen Emulation Frontend
+Exec=/usr/bin/arqa-session-start
+Type=Application
+DesktopNames=Arqa

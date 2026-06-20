@@ -1,0 +1,12 @@
+[Unit]
+Description=Configure ArqaOS SDDM autologin for the installed user
+Before=sddm.service
+ConditionPathExists=!/etc/arqa/.autologin-configured
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/arqa-autologin-setup.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

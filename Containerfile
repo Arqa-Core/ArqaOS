@@ -1,50 +1,62 @@
-# --- Stage 1: Fetch the latest ArqaLauncher asset ---
+# --- Stage 1: Fetch the latest ArqaLauncher release asset -------------------
 FROM alpine:latest AS fetcher
-RUN apk add --no-cache curl jq unzip
+
+RUN apk add --no-cache curl jq unzip file
 
 WORKDIR /tmp
-RUN curl -s https://api.github.com/repos/Arqa-Core/ArqaLauncher/releases/latest \
-    | jq -r '.assets[] | select(.name | test(".*linux.*|.*zip.*|.*tar.*")) | .browser_download_url' \
-    | xargs curl -L -o arqa-launcher-package.zip
 
-RUN mkdir /app && unzip arqa-launcher-package.zip -d /app
+# Pull the release metadata once, fail loudly if it's empty (rate-limited /
+# no releases yet / repo renamed) instead of silently producing an empty zip.
+RUN set -euo pipefail; \
+    curl -fsSL https://api.github.com/repos/Arqa-Core/ArqaLauncher/releases/latest -o release.json; \
+    URL=$(jq -r '.assets[] | select(.name | test("linux.*\\.(zip|tar\\.gz)$")) | .browser_download_url' release.json | head -n1); \
+    if [ -z "$URL" ] || [ "$URL" = "null" ]; then \
+        echo "ERROR: no linux release asset found on ArqaLauncher latest release" >&2; \
+        cat release.json >&2; \
+        exit 1; \
+    fi; \
+    echo "Fetching: $URL"; \
+    curl -fL "$URL" -o launcher-package
 
-# --- Stage 2: Build the Distro Image ---
+# Electron Forge's zip/tar maker nests the binary inside a folder named
+# after productName, e.g. "arqa-launcher-linux-x64/arqa-launcher". We don't
+# want that path to leak into the Containerfile, so flatten it here: find
+# the single top-level directory (if any) and promote its contents up.
+RUN set -euo pipefail; \
+    mkdir -p /app/_extract; \
+    cd /app/_extract; \
+    if file /tmp/launcher-package | grep -qi zip; then \
+        unzip -q /tmp/launcher-package; \
+    else \
+        tar -xf /tmp/launcher-package; \
+    fi; \
+    ENTRIES=$(ls -A); \
+    COUNT=$(echo "$ENTRIES" | wc -l); \
+    if [ "$COUNT" -eq 1 ] && [ -d "$ENTRIES" ]; then \
+        mv "$ENTRIES"/* /app/ 2>/dev/null || true; \
+        mv "$ENTRIES"/.[!.]* /app/ 2>/dev/null || true; \
+    else \
+        mv /app/_extract/* /app/; \
+    fi; \
+    rm -rf /app/_extract; \
+    BIN=$(find /app -maxdepth 1 -type f -executable | head -n1); \
+    if [ -z "$BIN" ]; then echo "ERROR: no executable found in extracted package" >&2; ls -laR /app >&2; exit 1; fi; \
+    chmod +x "$BIN"; \
+    if [ "$(basename "$BIN")" != "arqa-launcher" ]; then ln -sf "$(basename "$BIN")" /app/arqa-launcher; fi
+
+# --- Stage 2: Build the ArqaOS image ----------------------------------------
 FROM ghcr.io/ublue-os/bazzite-deck:stable
 
-# Install Cage (Kiosk Wayland Compositor) to handle absolute fullscreen scaling
-RUN rpm-ostree install cage
-
-# Copy the fetched frontend into the target directory
+COPY build_files /ctx/build_files
+COPY system_files /ctx/system_files
 COPY --from=fetcher /app /opt/ArqaLauncher
 
-# Create the custom launch script directly in /usr/bin/
-RUN echo '#!/bin/bash\n\
-# Launch Cage compositor and force ArqaLauncher into standard borderless fullscreen\n\
-exec cage -- /opt/ArqaLauncher/arqa-launcher --no-sandbox --fullscreen\n\
-' > /usr/bin/arqa-session-start && chmod +x /usr/bin/arqa-session-start
+# build.sh copies system_files/ over /, installs packages via dnf5, and
+# enables the systemd units listed below - keeping all of that in one
+# script (instead of scattered RUN lines) is what the upstream image
+# template expects, and is what makes `just build` reproducible locally.
+RUN chmod +x /ctx/build_files/build.sh && /ctx/build_files/build.sh
 
-# Create the Desktop Session Entry for SDDM
-RUN mkdir -p /usr/share/wayland-sessions && echo '[Desktop Entry]\n\
-Name=Arqa Frontend\n\
-Comment=Custom Fullscreen Emulation Frontend\n\
-Exec=/usr/bin/arqa-session-start\n\
-Type=Application\n\
-DesktopNames=Arqa\n\
-' > /usr/share/wayland-sessions/arqa.desktop
+RUN rm -rf /ctx
 
-# Configure Autologin to target your new fullscreen layout
-RUN mkdir -p /etc/sddm.conf.d && echo '[Autologin]\n\
-Relogin=false\n\
-Session=arqa.desktop\n\
-User=live\n\
-' > /etc/sddm.conf.d/autologin.conf
-
-# Keep the SteamOS return shortcut healthy on the KDE skeleton layer
-RUN mkdir -p /etc/skel/Desktop && echo '[Desktop Entry]\n\
-Name=Return to Frontend\n\
-Exec=steamos-session-select arqa\n\
-Icon=games-config\n\
-Terminal=false\n\
-Type=Application\n\
-' > /etc/skel/Desktop/return-to-frontend.desktop && chmod +x /etc/skel/Desktop/return-to-frontend.desktop
+RUN bootc container lint

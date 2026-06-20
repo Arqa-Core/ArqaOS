@@ -1,27 +1,29 @@
 #!/bin/bash
-
 set -ouex pipefail
 
 # Copy the contents of system_files/ of the git repo to /
 cp -avf "/ctx/system_files"/. /
 
 ### Install packages
+dnf5 install -y tmux cage plymouth-plugin-script
 
-# Packages can be installed from any enabled yum repo on the image.
-# RPMfusion repos are available by default in ublue main images
-# List of rpmfusion packages can be found here:
-# https://mirrors.rpmfusion.org/mirrorlist?path=free/fedora/updates/43/x86_64/repoview/index.html&protocol=https&redirect=1
+# Files copied via `cp` lose their git executable bit unless it was set
+# in the repo itself - set it explicitly here so we don't depend on
+# remembering to `chmod +x` before every commit.
+chmod +x /usr/bin/arqa-session-start
+chmod +x /usr/libexec/arqa-autologin-setup.sh
+chmod +x /etc/skel/Desktop/return-to-frontend.desktop
 
-# this installs a package from fedora repos
-dnf5 install -y tmux
+### Boot splash
+# Make our script-based theme the default, then rebuild the initramfs so
+# the new theme is actually picked up at boot (plymouth themes that aren't
+# baked into initramfs silently fall back to the stock one).
+plymouth-set-default-theme arqa
 
-# Use a COPR Example:
-#
-# dnf5 -y copr enable ublue-os/staging
-# dnf5 -y install package
-# Disable COPRs so they don't end up enabled on the final image:
-# dnf5 -y copr disable ublue-os/staging
+KVER=$(rpm -q --queryformat '%{version}-%{release}.%{arch}\n' kernel-core)
+dracut -f --no-hostonly --kver "$KVER"
 
-#### Example for enabling a System Unit File
-
+### Services
 systemctl enable podman.socket
+systemctl enable sddm.service
+systemctl enable arqa-autologin-setup.service
