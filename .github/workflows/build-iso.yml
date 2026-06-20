@@ -15,8 +15,8 @@ jobs:
       packages: read
 
     env:
-      IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
-      IMAGE_NAME: arqaos
+      IMAGE_REGISTRY: ghcr.io
+      IMAGE_NAME: arqa-core/arqaos
       DEFAULT_TAG: latest
 
     steps:
@@ -30,7 +30,17 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Build ISO
-        run: just build-iso
+        env:
+          # Force non-local image source for CI
+          SOURCE_IMAGE: ghcr.io/arqa-core/arqaos:latest
+          IMAGE_REGISTRY: ghcr.io
+          IMAGE_NAME: arqa-core/arqaos
+          DEFAULT_TAG: latest
+        run: |
+          echo "Using SOURCE_IMAGE=${SOURCE_IMAGE}"
+          echo "Using IMAGE_REGISTRY=${IMAGE_REGISTRY}"
+          echo "Using IMAGE_NAME=${IMAGE_NAME}"
+          just build-iso
 
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
