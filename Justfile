@@ -380,6 +380,21 @@ _run-vm $target_image $tag $type $config:
     run_args=()
     run_args+=(--rm --privileged)
     run_args+=(--pull=newer)
+    run_args+=(--publish "127.0.0.1:${port}:8006")
+    run_args+=(--env "CPU_CORES=4")
+    run_args+=(--env "RAM_SIZE=8G")
+    run_args+=(--env "DISK_SIZE=64G")
+    run_args+=(--env "TPM=Y")
+    run_args+=(--env "GPU=N")
+    run_args+=(--env "BOOT=menu")
+    run_args+=(--env "EXTRA=-append 'systemd.unit=multi-user.target console=ttyS0,115200 plymouth.enable=0 nomodeset'")
+    run_args+=(--device=/dev/kvm)
+    run_args+=(--volume "${PWD}/${image_file}":"/boot.${type}")
+    run_args+=(docker.io/qemux/qemu)
+
+    # Run the VM and open the browser to connect
+    (sleep 30 && xdg-open http://localhost:"$port") &
+    podman run "${run_args[@]}"
 
 # -----------------------------------------------------------------------
 # Dev build: build ArqaLauncher locally and inject it into the image
@@ -454,21 +469,6 @@ build-dev $target_image=image_name $tag="dev":
     echo ""
     echo "Dev image built: ${target_image}:${tag}"
     echo "Run with: podman run --rm -it ${target_image}:${tag}"
-    run_args+=(--publish "127.0.0.1:${port}:8006")
-    run_args+=(--env "CPU_CORES=4")
-    run_args+=(--env "RAM_SIZE=8G")
-    run_args+=(--env "DISK_SIZE=64G")
-    run_args+=(--env "TPM=Y")
-    run_args+=(--env "GPU=N")
-    run_args+=(--env "BOOT=menu")
-    run_args+=(--env "EXTRA=-append 'systemd.unit=multi-user.target console=ttyS0,115200 plymouth.enable=0 nomodeset'")
-    run_args+=(--device=/dev/kvm)
-    run_args+=(--volume "${PWD}/${image_file}":"/boot.${type}")
-    run_args+=(docker.io/qemux/qemu)
-    
-    # Run the VM and open the browser to connect
-    (sleep 30 && xdg-open http://localhost:"$port") &
-    podman run "${run_args[@]}"
 
 # Run a virtual machine from a QCOW2 image
 [group('Run Virtal Machine')]
