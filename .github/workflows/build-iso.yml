@@ -10,8 +10,13 @@ on:
 jobs:
   build-iso:
     runs-on: ubuntu-latest
+    env:
+      IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
+      IMAGE_NAME: ${{ github.event.repository.name }}
+      DEFAULT_TAG: latest
     permissions:
       contents: read
+      packages: read
 
     steps:
       - name: Checkout
@@ -20,9 +25,18 @@ jobs:
       - name: Install Just
         uses: extractions/setup-just@v2
 
+      - name: Prepare image name
+        run: |
+          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
+          echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
+
+      - name: Pull source image
+        run: |
+          podman pull "${IMAGE_REGISTRY}/${IMAGE_NAME}:${DEFAULT_TAG}"
+
       - name: Build ISO
         run: |
-          just build-iso
+          just _build-bib "${IMAGE_REGISTRY}/${IMAGE_NAME}" "${DEFAULT_TAG}" "iso" "disk_config/iso-kde.toml"
 
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
