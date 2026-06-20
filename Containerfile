@@ -32,49 +32,32 @@ RUN set -euo pipefail; \
 # after productName, e.g. "arqa-launcher-linux-x64/arqa-launcher". We don't
 # want that path to leak into the Containerfile, so flatten it here: find
 # the single top-level directory (if any) and promote its contents up.
-RUN set -euxo pipefail; \
-    mkdir -p /app/_extract; \
-    cd /app/_extract; \
-    echo "=== Checking launcher package ==="; \
-    file /tmp/launcher-package; \
-    ls -lh /tmp/launcher-package; \
-    echo "=== Extracting ==="; \
-    if file /tmp/launcher-package | grep -qi zip; then \
-        echo "Detected ZIP format"; \
-        unzip -l /tmp/launcher-package | head -20; \
-        unzip -q /tmp/launcher-package; \
+RUN mkdir -p /app/_extract && cd /app/_extract && \
+    if unzip -q /tmp/launcher-package; then \
+        echo "Successfully extracted ZIP"; \
     else \
-        echo "Detected TAR format"; \
-        tar -tzf /tmp/launcher-package | head -20; \
-        tar -xf /tmp/launcher-package; \
-    fi; \
-    echo "=== Extraction complete, listing contents ==="; \
-    ls -laR /app/_extract; \
-    echo "=== Flattening structure ==="; \
-    ENTRIES=$(ls -A /app/_extract | head -1); \
-    if [ -n "$ENTRIES" ] && [ -d "/app/_extract/$ENTRIES" ] && [ "$(ls -A /app/_extract | wc -l)" -eq 1 ]; then \
-        echo "Found single top-level directory: $ENTRIES, promoting contents"; \
-        mv /app/_extract/"$ENTRIES"/* /app/ 2>/dev/null || true; \
-        mv /app/_extract/"$ENTRIES"/.[!.]* /app/ 2>/dev/null || true; \
+        echo "ZIP extraction failed, trying tar..."; \
+        tar -xf /tmp/launcher-package || (echo "TAR extraction also failed"; exit 1); \
+    fi && \
+    ENTRIES=$(find /app/_extract -maxdepth 1 -type d | tail -n +2 | head -1); \
+    if [ -n "$ENTRIES" ] && [ "$(ls -A /app/_extract | grep -v '^\.' | wc -l)" -eq 1 ]; then \
+        echo "Flattening single top-level directory"; \
+        mv "$ENTRIES"/* /app/ 2>/dev/null || true; \
+        mv "$ENTRIES"/.[!.]* /app/ 2>/dev/null || true; \
     else \
-        echo "Multiple entries or not a directory, moving all contents"; \
+        echo "Multiple entries found, moving all"; \
         mv /app/_extract/* /app/ 2>/dev/null || true; \
-    fi; \
-    rm -rf /app/_extract; \
-    echo "=== Final app directory ==="; \
-    ls -laR /app; \
-    BIN=$(find /app -maxdepth 1 -type f -executable 2>/dev/null | head -n1); \
-    if [ -z "$BIN" ]; then \
-        echo "ERROR: no executable found in extracted package" >&2; \
-        find /app -type f -ls | head -20 >&2; \
-        exit 1; \
-    fi; \
-    echo "Found binary: $BIN"; \
-    chmod +x "$BIN"; \
-    if [ "$(basename "$BIN")" != "arqa-launcher" ]; then \
+    fi && \
+    rm -rf /app/_extract && \
+    if [ ! -f /app/arqa-launcher ] && [ ! -L /app/arqa-launcher ]; then \
+        BIN=$(find /app -maxdepth 1 -type f -executable | head -n1); \
+        if [ -z "$BIN" ]; then \
+            echo "ERROR: no executable found" >&2; \
+            ls -laR /app; \
+            exit 1; \
+        fi; \
         ln -sf "$(basename "$BIN")" /app/arqa-launcher; \
-    fi; \
-    echo "=== Setup complete ==="; \
+    fi && \
     ls -lh /app/arqa-launcher
 
 # --- Stage 2: Build the ArqaOS image ----------------------------------------
