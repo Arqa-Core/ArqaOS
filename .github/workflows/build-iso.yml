@@ -29,6 +29,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Crucial step: Clear massive out-of-the-box runner caches to make space for the 16.6GB base image extraction
+      - name: Maximize runner build space
+        run: |
+          echo "=== Disk space before optimization ==="
+          df -h
+          
+          echo "Removing unwanted software caches..."
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          
+          echo "=== Disk space after optimization ==="
+          df -h
+
       - name: Install just
         uses: extractions/setup-just@v4
 
@@ -93,7 +108,7 @@ jobs:
           sudo podman images | grep -E "${{ steps.metadata.outputs.IMAGE_NAME }}"
 
           # Run bootc-image-builder via sudo. 
-          # --rootfs ext4 is added here to specify the fallback root filesystem layout.
+          # --rootfs ext4 explicitly declares structural layout fallback targets.
           sudo podman run --rm \
             --privileged \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
