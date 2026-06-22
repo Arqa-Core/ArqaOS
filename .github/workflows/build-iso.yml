@@ -93,7 +93,7 @@ jobs:
           sudo podman images | grep -E "${{ steps.metadata.outputs.IMAGE_NAME }}"
 
           # Run bootc-image-builder via sudo. 
-          # This provides the rootful environment BIB checks for and needs to build disk layouts.
+          # --rootfs ext4 is added here to specify the fallback root filesystem layout.
           sudo podman run --rm \
             --privileged \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
@@ -102,6 +102,7 @@ jobs:
             --security-opt label=type:unconfined_t \
             "${{ env.BIB_IMAGE }}" \
             --type iso \
+            --rootfs ext4 \
             --config /config/iso.toml \
             "${{ steps.metadata.outputs.IMAGE_URI }}" 2>&1 | tee build_output/logs/bib-build.log
 
