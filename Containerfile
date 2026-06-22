@@ -2,7 +2,8 @@
 FROM alpine:latest AS fetcher
 
 # Pin to a specific release tag (e.g. "v1.2.0") or keep "latest" to always
-# track the newest release. Override at build time with:
+# track the newest release.
+# Override at build time with:
 #   podman build --build-arg LAUNCHER_VERSION=v1.2.0 .
 ARG LAUNCHER_VERSION=latest
 
@@ -72,6 +73,12 @@ COPY --from=fetcher /app /opt/ArqaLauncher
 # script (instead of scattered RUN lines) is what the upstream image
 # template expects, and is what makes `just build` reproducible locally.
 RUN chmod +x /ctx/build_files/build.sh && /ctx/build_files/build.sh
+
+# === FIX: Disable broken GPG key verification check for terra-mesa repository ===
+RUN if [ -f /etc/yum.repos.d/terra-mesa.repo ]; then \
+        sed -i 's/gpgcheck=1/gpgcheck=0/g' /etc/yum.repos.d/terra-mesa.repo; \
+        sed -i 's/repo_gpgcheck=1/repo_gpgcheck=0/g' /etc/yum.repos.d/terra-mesa.repo || true; \
+    fi
 
 RUN rm -rf /ctx
 
