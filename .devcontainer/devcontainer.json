@@ -1,13 +1,10 @@
 {
-  "name": "ArqaOS Development Environment",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "name": "ArqaOS Build Environment",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
   "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:1": {},
-    "ghcr.io/devcontainers/features/common-utils:2": {
-      "configureZshAsDefaultShell": true
-    }
+    "ghcr.io/devcontainers/features/docker-in-docker:1": {}
   },
-  "updateContentCommand": "sudo apt-get update && sudo apt-get install -y podman jq && curl --proto '=https' --tlv1.3 -fsS https://just.systems/install.sh | sudo bash -s -- --to /usr/local/bin",
+  "updateContentCommand": "sudo apt-get update && sudo apt-get install -y podman jq && curl --proto '=https' --tlsv1.3 -fsS https://just.systems/install.sh | sudo bash -s -- --to /usr/local/bin",
   "customizations": {
     "vscode": {
       "extensions": [
