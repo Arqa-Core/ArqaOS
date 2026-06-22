@@ -68,7 +68,8 @@ jobs:
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ${{ env.IMAGE_REGISTRY }} \
+          # Log in using sudo so the root-owned podman instance has access to the private registry
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ${{ env.IMAGE_REGISTRY }} \
             -u ${{ github.actor }} --password-stdin
 
       - name: Create build directories
@@ -80,23 +81,22 @@ jobs:
         run: |
           set -eux
 
-          # Pull the OCI image from GHCR
+          # Pull the OCI image from GHCR using sudo
           echo "Pulling image: ${{ steps.metadata.outputs.IMAGE_URI }}"
-          if ! podman pull "${{ steps.metadata.outputs.IMAGE_URI }}"; then
+          if ! sudo podman pull "${{ steps.metadata.outputs.IMAGE_URI }}"; then
             echo "Failed to pull image, checking available tags..."
-            podman images
+            sudo podman images
             exit 1
           fi
 
-          # Verify the image exists locally
-          podman images | grep -E "${{ steps.metadata.outputs.IMAGE_NAME }}"
+          # Verify the image exists locally in rootful storage
+          sudo podman images | grep -E "${{ steps.metadata.outputs.IMAGE_NAME }}"
 
-          # Run bootc-image-builder for ISO
-          # Note: We mount the user's rootless storage directory ($HOME/.local/share/containers/storage)
-          # instead of the root-owned host path to prevent 'statfs: permission denied' errors.
-          podman run --rm \
+          # Run bootc-image-builder for ISO via sudo.
+          # This gives dracut proper system-level permission scopes during initramfs assembly.
+          sudo podman run --rm \
             --privileged \
-            -v $HOME/.local/share/containers/storage:/var/lib/containers/storage \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
             -v "$(pwd)/disk_config:/config:ro" \
             -v "$(pwd)/build_output/iso:/output" \
             --security-opt label=type:unconfined_t \
@@ -104,6 +104,9 @@ jobs:
             --type iso \
             --config /config/iso.toml \
             "${{ steps.metadata.outputs.IMAGE_URI }}" 2>&1 | tee build_output/logs/bib-build.log
+
+          # Adjust ownership back to the runner user so GitHub Actions can clean up and upload artifacts smoothly
+          sudo chown -R runner:docker build_output/
 
       - name: List generated artifacts
         if: always()
