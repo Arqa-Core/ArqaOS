@@ -3,23 +3,27 @@ FROM alpine:latest AS fetcher
 
 # Pin to a specific release tag (e.g. "v1.2.0") or keep "latest" to always
 # track the newest release.
-# Override at build time with:
-#   podman build --build-arg LAUNCHER_VERSION=v1.2.0 .
 ARG LAUNCHER_VERSION=latest
+
+# Accept a GitHub token to prevent API rate limiting (403 errors) in CI environments
+ARG GH_TOKEN
 
 RUN apk add --no-cache curl jq unzip file tar gzip
 
 WORKDIR /tmp
 
-# Pull the release metadata once, fail loudly if it's empty (rate-limited /
-# no releases yet / repo renamed) instead of silently producing an empty zip.
+# Pull the release metadata once, using the GH_TOKEN header if provided.
 RUN set -euo pipefail; \
     if [ "${LAUNCHER_VERSION}" = "latest" ]; then \
         RELEASE_URL="https://api.github.com/repos/Arqa-Core/ArqaLauncher/releases/latest"; \
     else \
         RELEASE_URL="https://api.github.com/repos/Arqa-Core/ArqaLauncher/releases/tags/${LAUNCHER_VERSION}"; \
     fi; \
-    curl -fsSL "${RELEASE_URL}" -o release.json; \
+    if [ -n "${GH_TOKEN}" ]; then \
+        curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" "${RELEASE_URL}" -o release.json; \
+    else \
+        curl -fsSL "${RELEASE_URL}" -o release.json; \
+    fi; \
     URL=$(jq -r '.assets[] | select(.name | test("linux.*\\.(zip|tar\\.gz)$")) | .browser_download_url' release.json | head -n1); \
     if [ -z "$URL" ] || [ "$URL" = "null" ]; then \
         echo "ERROR: no linux release asset found on ArqaLauncher release '${LAUNCHER_VERSION}'" >&2; \
@@ -27,7 +31,11 @@ RUN set -euo pipefail; \
         exit 1; \
     fi; \
     echo "Fetching: $URL"; \
-    curl -fL "$URL" -o launcher-package
+    if [ -n "${GH_TOKEN}" ]; then \
+        curl -fL -H "Authorization: Bearer ${GH_TOKEN}" "$URL" -o launcher-package; \
+    else \
+        curl -fL "$URL" -o launcher-package; \
+    fi
 
 # Electron Forge's zip/tar maker nests the binary inside a folder named
 # after productName, e.g. "arqa-launcher-linux-x64/arqa-launcher". We don't
