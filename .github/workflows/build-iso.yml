@@ -68,7 +68,7 @@ jobs:
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
         run: |
-          # Log in using sudo so the root-owned podman instance has access to the private registry
+          # Log in using sudo so the rootful podman engine has access to the private registry
           echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ${{ env.IMAGE_REGISTRY }} \
             -u ${{ github.actor }} --password-stdin
 
@@ -81,7 +81,7 @@ jobs:
         run: |
           set -eux
 
-          # Pull the OCI image from GHCR using sudo
+          # Pull the OCI image from GHCR using sudo (Rootful)
           echo "Pulling image: ${{ steps.metadata.outputs.IMAGE_URI }}"
           if ! sudo podman pull "${{ steps.metadata.outputs.IMAGE_URI }}"; then
             echo "Failed to pull image, checking available tags..."
@@ -89,11 +89,11 @@ jobs:
             exit 1
           fi
 
-          # Verify the image exists locally in rootful storage
+          # Verify the image exists locally inside rootful storage
           sudo podman images | grep -E "${{ steps.metadata.outputs.IMAGE_NAME }}"
 
-          # Run bootc-image-builder for ISO via sudo.
-          # This gives dracut proper system-level permission scopes during initramfs assembly.
+          # Run bootc-image-builder via sudo. 
+          # This provides the rootful environment BIB checks for and needs to build disk layouts.
           sudo podman run --rm \
             --privileged \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
@@ -105,7 +105,7 @@ jobs:
             --config /config/iso.toml \
             "${{ steps.metadata.outputs.IMAGE_URI }}" 2>&1 | tee build_output/logs/bib-build.log
 
-          # Adjust ownership back to the runner user so GitHub Actions can clean up and upload artifacts smoothly
+          # Reset ownership of build_output so the standard GitHub Actions runner user can collect the artifacts
           sudo chown -R runner:docker build_output/
 
       - name: List generated artifacts
