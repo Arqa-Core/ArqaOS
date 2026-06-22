@@ -1,162 +1,162 @@
-name: Build ISO
-
+---
+name: Build container image
 on:
-  workflow_run:
-    workflows: ["Build container image"]
-    types:
-      - completed
-    branches: [main]
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: '05 10 * * *'  # 10:05am UTC everyday
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**/README.md'
+      - '.github/agents/**'
   workflow_dispatch:
-    inputs:
-      image_tag:
-        description: 'Image tag to build ISO from (default: latest)'
-        required: false
-        type: string
 
 env:
-  IMAGE_REGISTRY: "ghcr.io"
-  BIB_IMAGE: "quay.io/centos-bootc/bootc-image-builder:latest"
+  IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"  # do not edit
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ inputs.brand_name}}-${{ inputs.stream_name }}
+  cancel-in-progress: true
 
 jobs:
-  build-iso:
-    name: Build ArqaOS ISO
+  build_push:
+    name: Build and push image
     runs-on: ubuntu-24.04
+
     permissions:
       contents: read
-      packages: read
+      packages: write
+      id-token: write
 
     steps:
+      # These stage versions are pinned by https://github.com/renovatebot/renovate
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-      # Crucial step: Clear massive out-of-the-box runner caches to make space for the 16.6GB base image extraction
-      - name: Maximize runner build space
-        run: |
-          echo "=== Disk space before optimization ==="
-          df -h
-          
-          echo "Removing unwanted software caches..."
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          
-          echo "=== Disk space after optimization ==="
-          df -h
+      - name: Maximize build space
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
 
       - name: Install just
-        uses: extractions/setup-just@v4
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 #v4.0.0
 
-      - name: Get image metadata
-        id: metadata
+      - name: Check Just Syntax
+        shell: bash
         run: |
-          # Load from image-template.env
-          set -a
-          source image-template.env
-          set +a
+          just check
 
-          IMAGE_NAME="${IMAGE_NAME,,}"
-          REPO_ORG="${REPO_ORGANIZATION,,}"
-
-          # Determine tag
-          if [ -n "${{ inputs.image_tag }}" ]; then
-            TAG="${{ inputs.image_tag }}"
-          else
-            TAG=$(just generate-default-tag)
-          fi
-
-          IMAGE_URI="${IMAGE_REGISTRY}/${REPO_ORG}/${IMAGE_NAME}:${TAG}"
-
-          echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_OUTPUT
-          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_OUTPUT
-          echo "TAG=${TAG}" >> $GITHUB_OUTPUT
-          echo "Building ISO for: ${IMAGE_URI}"
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Podman
+      - name: Image Name
+        id: image-name
         run: |
-          podman --version
-          podman info
+          IMAGE_NAME=$(just image_name)
 
-      - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
+          echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
+
+      - name: Default Tag
+        id: gen-default-tag
         run: |
-          # Log in using sudo so the rootful podman engine has access to the private registry
-          echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ${{ env.IMAGE_REGISTRY }} \
-            -u ${{ github.actor }} --password-stdin
+          DEFAULT_TAG=$(just generate-default-tag)
 
-      - name: Create build directories
+          echo "DEFAULT_TAG=${DEFAULT_TAG}" >> $GITHUB_ENV
+
+      - name: Prepare environment
         run: |
-          mkdir -p build_output/iso
-          mkdir -p build_output/logs
+          # Lowercase the image uri https://github.com/macbre/push-to-ghcr/issues/12
+          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
+          echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
 
-      - name: Build ISO with bootc-image-builder
+      # This actually builds the container image
+      - name: Build Image
+        id: build-image
         run: |
-          set -eux
+          sudo -E $(command -v just) build \
+            ${IMAGE_NAME} \
+            ${DEFAULT_TAG}
 
-          # Pull the OCI image from GHCR using sudo (Rootful)
-          echo "Pulling image: ${{ steps.metadata.outputs.IMAGE_URI }}"
-          if ! sudo podman pull "${{ steps.metadata.outputs.IMAGE_URI }}"; then
-            echo "Failed to pull image, checking available tags..."
-            sudo podman images
-            exit 1
-          fi
-
-          # Verify the image exists locally inside rootful storage
-          sudo podman images | grep -E "${{ steps.metadata.outputs.IMAGE_NAME }}"
-
-          # Run bootc-image-builder via sudo. 
-          # --rootfs ext4 explicitly declares structural layout fallback targets.
-          sudo podman run --rm \
-            --privileged \
-            -v /var/lib/containers/storage:/var/lib/containers/storage \
-            -v "$(pwd)/disk_config:/config:ro" \
-            -v "$(pwd)/build_output/iso:/output" \
-            --security-opt label=type:unconfined_t \
-            "${{ env.BIB_IMAGE }}" \
-            --type iso \
-            --rootfs ext4 \
-            --config /config/iso.toml \
-            "${{ steps.metadata.outputs.IMAGE_URI }}" 2>&1 | tee build_output/logs/bib-build.log
-
-          # Reset ownership of build_output so the standard GitHub Actions runner user can collect the artifacts
-          sudo chown -R runner:docker build_output/
-
-      - name: List generated artifacts
-        if: always()
+      # This is optional, this provides smaller delta updates
+      - name: Rechunk with rpm-ostree
+        id: rechunk
         run: |
-          echo "=== Build Output Contents ==="
-          find build_output -type f -exec ls -lh {} \;
-          echo "=== Looking for ISO files ==="
-          find build_output -name "*.iso" -o -name "*.qcow2"
+          sudo -E $(command -v just) ostree-rechunk \
+            ${IMAGE_NAME} \
+            ${DEFAULT_TAG}
 
-      - name: Upload ISO as artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: arqaos-iso-${{ steps.metadata.outputs.TAG }}
-          path: build_output/iso/
-          retention-days: 30
-          if-no-files-found: warn
+      # If you are feeling adventurous, use the new distro agnostic rechunker
+      # https://github.com/coreos/chunkah
+      # You can delete the Rechunk with rpm-ostree portion then if you use this
+      #- name: Rechunk with Chunkah
+      #  id: rechunk
+      #  run: |
+      #    sudo -E $(command -v just) rechunk \
+      #      ${IMAGE_NAME} \
+      #      ${DEFAULT_TAG}
 
-      - name: Upload build logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: arqaos-iso-logs-${{ steps.metadata.outputs.TAG }}
-          path: build_output/logs/
-          retention-days: 7
-          if-no-files-found: ignore
+      - name: Generate Build Tags
+        id: gen-build-tags
+        run: |
+          alias_tags="$(just generate-build-tags \
+                        ${IMAGE_NAME} \
+                        ${DEFAULT_TAG})"
 
-      - name: Create GitHub Release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v') && success()
-        uses: softprops/action-gh-release@v1
-        with:
-          files: build_output/iso/**/*
-          draft: false
-          prerelease: false
-          generate_release_notes: true
+          echo "Tags for this Action..."
+          echo "${alias_tags}"
+          echo "alias_tags=${alias_tags}" >> $GITHUB_OUTPUT
+
+      - name: Tag Image
+        id: tag-images
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALIAS_TAGS: ${{ steps.gen-build-tags.outputs.alias_tags }}
+        run: |
+          sudo -E $(command -v just) tag-images \
+            "${IMAGE_NAME}" \
+            "${DEFAULT_TAG}" \
+            "${ALIAS_TAGS}"
+
+      # These `if` statements are so that pull requests for your custom images do not make it publish any packages under your name without you knowing
+      # They also check if the runner is on the default branch so that things like the merge queue (if you enable it), are going to work
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push To GHCR
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        id: push-image
+        env:
+          ALIAS_TAGS: ${{ steps.gen-build-tags.outputs.alias_tags }}
+        run: |
+          set -euox pipefail
+          for tag in ${ALIAS_TAGS}; do
+            sudo -E podman push --digestfile=/tmp/digestfile ${IMAGE_NAME}:${tag} ${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}
+          done
+
+          digest=$(< /tmp/digestfile)
+
+          echo "digest=${digest}" >> $GITHUB_OUTPUT
+
+      # This section is optional and only needs to be enabled if you plan on distributing
+      # your project for others to consume. You will need to create a public and private key
+      # using Cosign and save the private key as a repository secret in Github for this workflow
+      # to consume. For more details, review the image signing section of the README.
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        # https://github.com/containers/container-libs/issues/388
+        with:
+          cosign-release: 'v2.6.3'
+
+      - name: Sign container image
+        id: sign-image
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          COSIGN_EXPERIMENTAL: false
+          COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
+          DIGEST: ${{ steps.push-image.outputs.digest }}
+        run: |
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY ${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}
+
